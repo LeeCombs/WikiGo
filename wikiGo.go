@@ -30,6 +30,13 @@ func loadPage(title string) (*Page, error) {
 	return &Page{Title: title, Body: body}, nil
 }
 
+/* Render HTML templates */
+func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
+	cwd, _ := os.Getwd()
+    t, _ := template.ParseFiles(filepath.Join(cwd, "/src/templates/edit" + ".html"))
+    t.Execute(w, p)
+}
+
 /* Handle generic requests */
 func handler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
@@ -37,9 +44,16 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 /* Handle URLs prefixed with /view/. Allows user to view a Page */
 func viewHandler(w http.ResponseWriter, r *http.Request) {
-	title := r.URL.Path[len("/view/"):]
-	p, _ := loadPage(title)
-	fmt.Fprintf(w, "<h1>%s</h1><div>%s</div>", p.Title, p.Body)
+    title := r.URL.Path[len("/view/"):]
+    p, err := loadPage(title)
+
+    // If the page wasn't found, redirect to the edit view
+    if err != nil {
+        http.Redirect(w, r, "/edit/"+title, http.StatusFound)
+        return
+    }
+
+    renderTemplate(w, "view", p)
 }
 
 /* Handle URLs prefixed with /edit/. Allows user to edit a Page */
@@ -50,20 +64,18 @@ func editHandler(w http.ResponseWriter, r *http.Request) {
         p = &Page{Title: title}
     }
 
-	cwd, _ := os.Getwd()
-    t, err := template.ParseFiles(filepath.Join(cwd, "/src/templates/edit.html"))
-    if err != nil {
-        fmt.Println(err)
-        return
-    }
-    t.Execute(w, p)
+    renderTemplate(w, "edit", p)
 }
 
 /* Handle URLs prefixed with /save/. Allows user to save a Page */
 func saveHandler(w http.ResponseWriter, r *http.Request) {
-	title := r.URL.Path[len("/view/"):]
-	p, _ := loadPage(title)
-	fmt.Fprintf(w, "<h1>%s</h1><div>%s</div>", p.Title, p.Body)
+    title := r.URL.Path[len("/save/"):]
+    body := r.FormValue("body")
+    p := &Page{Title: title, Body: []byte(body)}
+    p.save()
+
+    // After saving, send the user to the view page
+    http.Redirect(w, r, "/view/"+title, http.StatusFound)
 }
 
 func main() {
