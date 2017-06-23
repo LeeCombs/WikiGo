@@ -32,9 +32,23 @@ func loadPage(title string) (*Page, error) {
 
 /* Render HTML templates */
 func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
-	cwd, _ := os.Getwd()
-    t, _ := template.ParseFiles(filepath.Join(cwd, "/src/templates/edit" + ".html"))
-    t.Execute(w, p)
+	cwd, err := os.Getwd()
+	if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    t, err := template.ParseFiles(filepath.Join(cwd, "/src/templates/" + tmpl + ".html"))
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    err = t.Execute(w, p)
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
 }
 
 /* Handle generic requests */
@@ -72,7 +86,12 @@ func saveHandler(w http.ResponseWriter, r *http.Request) {
     title := r.URL.Path[len("/save/"):]
     body := r.FormValue("body")
     p := &Page{Title: title, Body: []byte(body)}
-    p.save()
+
+    err := p.save()
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
 
     // After saving, send the user to the view page
     http.Redirect(w, r, "/view/"+title, http.StatusFound)
