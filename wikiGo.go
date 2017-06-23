@@ -60,54 +60,49 @@ func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
     }
 }
 
+/*  */
+func makeHandler(fn func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        m := validPath.FindStringSubmatch(r.URL.Path)
+        if m == nil {
+            http.NotFound(w, r)
+            return
+        }
+        fn(w, r, m[2])
+    }
+}
+
 /* Handle generic requests */
 func handler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
 }
 
 /* Handle URLs prefixed with /view/. Allows user to view a Page */
-func viewHandler(w http.ResponseWriter, r *http.Request) {
-    title, err := getTitle(w, r)
-    if err != nil {
-    	return
-    }
-
+func viewHandler(w http.ResponseWriter, r *http.Request, title string) {
     p, err := loadPage(title)
     if err != nil {
     	// If the page wasn't found, redirect to the edit view
         http.Redirect(w, r, "/edit/" + title, http.StatusFound)
         return
     }
-
     renderTemplate(w, "view", p)
 }
 
 /* Handle URLs prefixed with /edit/. Allows user to edit a Page */
-func editHandler(w http.ResponseWriter, r *http.Request) {
-    title, err := getTitle(w, r)
-    if err != nil {
-    	return
-    }
-
+func editHandler(w http.ResponseWriter, r *http.Request, title string) {
     p, err := loadPage(title)
     if err != nil {
         p = &Page{Title: title}
     }
-
     renderTemplate(w, "edit", p)
 }
 
 /* Handle URLs prefixed with /save/. Allows user to save a Page */
-func saveHandler(w http.ResponseWriter, r *http.Request) {
-    title, err := getTitle(w, r)
-    if err != nil {
-    	return
-    }
-
+func saveHandler(w http.ResponseWriter, r *http.Request, title string) {
     body := r.FormValue("body")
     p := &Page{Title: title, Body: []byte(body)}
 
-    err = p.save()
+    err := p.save()
     if err != nil {
         http.Error(w, err.Error(), http.StatusInternalServerError)
         return
@@ -118,8 +113,8 @@ func saveHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	http.HandleFunc("/view/", viewHandler)
-	http.HandleFunc("/edit/", editHandler)
-	http.HandleFunc("/save/", saveHandler)
+    http.HandleFunc("/view/", makeHandler(viewHandler))
+    http.HandleFunc("/edit/", makeHandler(editHandler))
+    http.HandleFunc("/save/", makeHandler(saveHandler))
 	http.ListenAndServe(":8282", nil)
 }
