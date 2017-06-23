@@ -7,11 +7,33 @@ import (
 	"html/template"
 	"os"
 	"path/filepath"
+	"regexp"
+	"errors"
 )
 
 type Page struct {
 	Title string
 	Body []byte
+}
+
+var (
+	cwd, _ = os.Getwd()
+	templatePath = filepath.Join(cwd, "/src/templates/")
+	viewPath = filepath.Join(templatePath, "/view/")
+	editPath = filepath.Join(templatePath, "/edit/")
+	savePath = filepath.Join(templatePath, "/save/")
+	templates = template.Must(template.ParseFiles(editPath + ".html", viewPath + ".html"))
+	validPath = regexp.MustCompile("^/(edit|save|view)/([a-zA-Z0-9]+)$")
+)
+
+/* Validate path and extract the Page title */
+func getTitle(w http.ResponseWriter, r *http.Request) (string, error) {
+    m := validPath.FindStringSubmatch(r.URL.Path)
+    if m == nil {
+        http.NotFound(w, r)
+        return "", errors.New("Invalid Page Title")
+    }
+    return m[2], nil // The title is the second subexpression.
 }
 
 /* Save a Page locally */
@@ -32,22 +54,9 @@ func loadPage(title string) (*Page, error) {
 
 /* Render HTML templates */
 func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
-	cwd, err := os.Getwd()
-	if err != nil {
-        http.Error(w, err.Error(), http.StatusInternalServerError)
-        return
-    }
-
-    t, err := template.ParseFiles(filepath.Join(cwd, "/src/templates/" + tmpl + ".html"))
+    err := templates.ExecuteTemplate(w, tmpl + ".html", p)
     if err != nil {
         http.Error(w, err.Error(), http.StatusInternalServerError)
-        return
-    }
-
-    err = t.Execute(w, p)
-    if err != nil {
-        http.Error(w, err.Error(), http.StatusInternalServerError)
-        return
     }
 }
 
@@ -58,12 +67,15 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 /* Handle URLs prefixed with /view/. Allows user to view a Page */
 func viewHandler(w http.ResponseWriter, r *http.Request) {
-    title := r.URL.Path[len("/view/"):]
-    p, err := loadPage(title)
-
-    // If the page wasn't found, redirect to the edit view
+    title, err := getTitle(w, r)
     if err != nil {
-        http.Redirect(w, r, "/edit/"+title, http.StatusFound)
+    	return
+    }
+
+    p, err := loadPage(title)
+    if err != nil {
+    	// If the page wasn't found, redirect to the edit view
+        http.Redirect(w, r, "/edit/" + title, http.StatusFound)
         return
     }
 
@@ -72,7 +84,11 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 
 /* Handle URLs prefixed with /edit/. Allows user to edit a Page */
 func editHandler(w http.ResponseWriter, r *http.Request) {
-    title := r.URL.Path[len("/edit/"):]
+    title, err := getTitle(w, r)
+    if err != nil {
+    	return
+    }
+
     p, err := loadPage(title)
     if err != nil {
         p = &Page{Title: title}
@@ -83,11 +99,15 @@ func editHandler(w http.ResponseWriter, r *http.Request) {
 
 /* Handle URLs prefixed with /save/. Allows user to save a Page */
 func saveHandler(w http.ResponseWriter, r *http.Request) {
-    title := r.URL.Path[len("/save/"):]
+    title, err := getTitle(w, r)
+    if err != nil {
+    	return
+    }
+
     body := r.FormValue("body")
     p := &Page{Title: title, Body: []byte(body)}
 
-    err := p.save()
+    err = p.save()
     if err != nil {
         http.Error(w, err.Error(), http.StatusInternalServerError)
         return
